@@ -66,15 +66,16 @@ def generateInstance(supply_node, demand_node, max_cost, max_supply_demand):
 def solver(supply_set, demand_set, cost_matrix):
     problem = plp.LpProblem("TransportationProblem", plp.LpMinimize)
     decision_vars = plp.LpVariable.dicts("X", [(i, j) for i in range(len(supply_set)) for j in range(len(demand_set))], lowBound=0, cat='Continuous')
+    
     problem += plp.lpSum([decision_vars[(i, j)] * cost_matrix[i][j] for i in range(len(supply_set)) for j in range(len(demand_set))])
     
     # Supply constraints
     for i in range(len(supply_set)):
-        problem += plp.lpSum([decision_vars[(i, j)] for j in range(len(demand_set))]) == supply_set[i], f"Supply_Constraint_{i}"
+        problem += plp.lpSum([decision_vars[(i, j)] for j in range(len(demand_set))]) == supply_set[i]
     
     # Demand constraints
     for j in range(len(demand_set)):
-        problem += plp.lpSum([decision_vars[(i, j)] for i in range(len(supply_set))]) == demand_set[j], f"Demand_Constraint_{j}"
+        problem += plp.lpSum([decision_vars[(i, j)] for i in range(len(supply_set))]) == demand_set[j]
         
     problem.solve(plp.PULP_CBC_CMD(msg=False))
     
@@ -121,7 +122,7 @@ def formulate(supply_set, demand_set, cost_matrix):
     return c, A, b, vars
 
 # revised simplex method. It uses Big M method to handle artificial variables
-def revisedSimplex(lp: Problem, M=1e6) -> Result:
+def revisedSimplex(lp: Problem, M=1e6):
     # get dimensions of the matrix. m = number of constraints, n = number of variables
     m, n = lp.A.shape
 
@@ -167,7 +168,7 @@ def revisedSimplex(lp: Problem, M=1e6) -> Result:
         d = B_inv @ A_bigM[:, entering_var]
 
         # Check for unboundedness
-        if np.all(d <= 1e-8):
+        if np.all(d <= 0):
             return Result(False, "Unbounded", 0.0, {})
 
         # min ratio test
@@ -205,6 +206,28 @@ def revisedSimplex(lp: Problem, M=1e6) -> Result:
 
     return Result(True, "Optimal", obj_val, sol)
         
+def experiment():
+    for i in range(5):
+        number_of_nodes = np.random.randint(3, 6)
+        max_cost = np.random.randint(10, 50)
+        max_supply_demand = np.random.randint(10, 50)
+        print(f"\033[33mExperiment {i + 1}:\033[0m")
+        print(f"Number of Nodes: {number_of_nodes}")
+        print(f"Max Cost: {max_cost}")
+        print(f"Max Supply/Demand: {max_supply_demand}", end="\n\n")
+        
+        supply_set, demand_set, cost_matrix = generateInstance(number_of_nodes, number_of_nodes, max_cost, max_supply_demand)
+
+        c, A, b, vars = formulate(supply_set, demand_set, cost_matrix)
+
+        lp = Problem(c, A, b, vars)
+
+        solverResult = solver(supply_set, demand_set, cost_matrix)
+        manualResult = revisedSimplex(lp)
+
+        printSolverResult(solverResult, number_of_nodes, number_of_nodes)
+        printManualResult(manualResult, number_of_nodes, number_of_nodes)
+
 
 def printSolverResult(result, supply_nodes, demand_nodes):
     print("Solver Result:")
@@ -216,6 +239,7 @@ def printSolverResult(result, supply_nodes, demand_nodes):
         for j in range(demand_nodes):
             print(f"x{i + 1}{j + 1} = {decision_vars[(i, j)]}", end="\t")
         print()
+    print()
 
 
 def printManualResult(result, supply_nodes, demand_nodes):
@@ -228,21 +252,6 @@ def printManualResult(result, supply_nodes, demand_nodes):
         for j in range(demand_nodes):
             print(f"x{i + 1}{j + 1} = {var_vals[f'x{i + 1}{j + 1}']}", end="\t")
         print()
+    print()
 
-supply_nodes = 3
-demand_nodes = 3
-max_cost = 10
-max_supply_demand = 10
-
-supply_set, demand_set, cost_matrix = generateInstance(supply_nodes, demand_nodes, max_cost, max_supply_demand)
-
-c, A, b, vars = formulate(supply_set, demand_set, cost_matrix)
-
-lp = Problem(c, A, b, vars)
-
-solverResult = solver(supply_set, demand_set, cost_matrix)
-manualResult = revisedSimplex(lp)
-
-printSolverResult(solverResult, supply_nodes, demand_nodes)
-print()
-printManualResult(manualResult, supply_nodes, demand_nodes)
+experiment()
