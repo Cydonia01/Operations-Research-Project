@@ -28,11 +28,10 @@ def generateInstance(supply_node, demand_node, max_cost, max_supply_demand):
     demand_set = []
     cost_matrix = []
     
-    # fill supply set with random values
+    # fill supply and demand set with random values
     for i in range(supply_node):
         supply_set.append(random.randint(1, max_supply_demand))
     
-    # fill demand set with random values
     for i in range(demand_node):
         demand_set.append(random.randint(1, max_supply_demand))
     
@@ -64,25 +63,29 @@ def generateInstance(supply_node, demand_node, max_cost, max_supply_demand):
 
 # pulp solver for the transportation problem
 def solver(supply_set, demand_set, cost_matrix):
+    
+    # define problem and decision variables
     problem = plp.LpProblem("TransportationProblem", plp.LpMinimize)
+    
     decision_vars = plp.LpVariable.dicts("X", [(i, j) for i in range(len(supply_set)) for j in range(len(demand_set))], lowBound=0, cat='Continuous')
     
     problem += plp.lpSum([decision_vars[(i, j)] * cost_matrix[i][j] for i in range(len(supply_set)) for j in range(len(demand_set))])
     
-    # Supply constraints
+    # include supply and demand constraints
     for i in range(len(supply_set)):
         problem += plp.lpSum([decision_vars[(i, j)] for j in range(len(demand_set))]) == supply_set[i]
     
-    # Demand constraints
     for j in range(len(demand_set)):
         problem += plp.lpSum([decision_vars[(i, j)] for i in range(len(supply_set))]) == demand_set[j]
         
+    # solve the problem and return the solution
     problem.solve(plp.PULP_CBC_CMD(msg=False))
     
     solution = {
         "objective_value": plp.value(problem.objective),
         "decision_vars": {k: plp.value(v) for k, v in decision_vars.items()}
     }
+    
     return solution
         
 
@@ -115,7 +118,7 @@ def formulate(supply_set, demand_set, cost_matrix):
             constraint[i * num_demand + j] = 1
         demand_constraints.append(constraint)
     
-    # combine all constraints
+    # combining constraints
     A = np.array(supply_constraints + demand_constraints)
     b = np.array(supply_set + demand_set)
     
@@ -134,24 +137,24 @@ def revisedSimplex(lp: Problem, M=1e6):
     c_bigM = np.hstack((lp.c, np.ones(m) * M)) # add Big M penalties for artificial variables
     vars_bigM = lp.vars + [f"a_{i + 1}" for i in range(m)]
     
-    # Initialize basis with artificial variables
+    # initialize basis with artificial variables
     basis = art_indices.copy()
     non_basis = [i for i in range(n + m) if i not in basis]
 
-    # Compute initial basis matrix and its inverse
+    # initial basis matrix and its inverse
     B = A_bigM[:, basis]
     B_inv = np.linalg.inv(B)
     
-    # Compute initial basic solution
+    # initial basic solution
     x = np.zeros(n + m)
     x[basis] = B_inv @ lp.b
 
     while True:
-        # compute dual variables
+        # computing dual variables
         c_B = c_bigM[basis]
         y = c_B @ B_inv
 
-        # compute reduced costs for non-basic variables
+        # computing reduced costs for non-basic variables
         A_N = A_bigM[:, non_basis]
         c_N = c_bigM[non_basis]
         reduced_costs = c_N - y @ A_N
@@ -168,7 +171,7 @@ def revisedSimplex(lp: Problem, M=1e6):
         d = B_inv @ A_bigM[:, entering_var]
 
         # Check for unboundedness
-        if np.all(d <= 0):
+        if np.all(d <= 1e-8):
             return Result(False, "Unbounded", 0.0, {})
 
         # min ratio test
@@ -187,7 +190,7 @@ def revisedSimplex(lp: Problem, M=1e6):
         basis[leaving_idx] = entering_var
         non_basis[entering_idx] = leaving_var
 
-        # update B_inv
+        # update basis matrix and its inverse
         B = A_bigM[:, basis]
         B_inv = np.linalg.inv(B)
 
@@ -195,17 +198,19 @@ def revisedSimplex(lp: Problem, M=1e6):
         x = np.zeros(n + m)
         x[basis] = B_inv @ lp.b
 
-    # Check for artificial variables still in the basis
+    # Check for artificial variables if they are still in the basis
     for i in art_indices:
         if i in basis and abs(x[i]) > 1e-8:
             return Result(False, "Infeasible", 0.0, {})
 
-    # Compute objective value
+    # compute objective value
     obj_val = c_bigM[:n] @ x[:n]
     sol = {vars_bigM[i]: x[i] for i in range(len(vars_bigM)) if "a" not in vars_bigM[i]}
 
     return Result(True, "Optimal", obj_val, sol)
         
+        
+# generate instances and solve them using both pulp and revised simplex
 def experiment():
     for i in range(5):
         number_of_nodes = np.random.randint(3, 6)
@@ -216,8 +221,10 @@ def experiment():
         print(f"Max Cost: {max_cost}")
         print(f"Max Supply/Demand: {max_supply_demand}", end="\n\n")
         
+        # generate instance
         supply_set, demand_set, cost_matrix = generateInstance(number_of_nodes, number_of_nodes, max_cost, max_supply_demand)
 
+        # formulate the problem
         c, A, b, vars = formulate(supply_set, demand_set, cost_matrix)
 
         lp = Problem(c, A, b, vars)
