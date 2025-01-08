@@ -1,4 +1,5 @@
 import pulp as plp
+import time
 import random
 import numpy as np
 from dataclasses import dataclass
@@ -67,9 +68,12 @@ def solver(supply_set, demand_set, cost_matrix):
     # define problem and decision variables
     problem = plp.LpProblem("TransportationProblem", plp.LpMinimize)
     
-    decision_vars = plp.LpVariable.dicts("X", [(i, j) for i in range(len(supply_set)) for j in range(len(demand_set))], lowBound=0, cat='Continuous')
+    vars_array = [(i, j) for i in range(len(supply_set)) for j in range(len(demand_set))]
+    decision_vars = plp.LpVariable.dicts("X", vars_array, lowBound=0, cat='Continuous')
     
-    problem += plp.lpSum([decision_vars[(i, j)] * cost_matrix[i][j] for i in range(len(supply_set)) for j in range(len(demand_set))])
+    # define objective function
+    objective_func = [decision_vars[(i, j)] * cost_matrix[i][j] for i in range(len(supply_set)) for j in range(len(demand_set))]
+    problem += plp.lpSum(objective_func)
     
     # include supply and demand constraints
     for i in range(len(supply_set)):
@@ -150,7 +154,7 @@ def revisedSimplex(lp: Problem, M=1e6):
     x[basis] = B_inv @ lp.b
 
     while True:
-        # computing dual variables
+        # computing right hand side
         c_B = c_bigM[basis]
         y = c_B @ B_inv
 
@@ -212,10 +216,13 @@ def revisedSimplex(lp: Problem, M=1e6):
         
 # generate instances and solve them using both pulp and revised simplex
 def experiment():
-    for i in range(5):
-        number_of_nodes = np.random.randint(3, 6)
+    sizes = [5, 10, 20, 30, 50, 100, 150, 200]
+    
+    for i in range(len(sizes)):
+        number_of_nodes = sizes[i]
         max_cost = np.random.randint(10, 50)
         max_supply_demand = np.random.randint(10, 50)
+        
         print(f"\033[33mExperiment {i + 1}:\033[0m")
         print(f"Number of Nodes: {number_of_nodes}")
         print(f"Max Cost: {max_cost}")
@@ -229,36 +236,28 @@ def experiment():
 
         lp = Problem(c, A, b, vars)
 
+        startTime = time.time()
         solverResult = solver(supply_set, demand_set, cost_matrix)
+        printSolverResult(solverResult)
+        print(f"Elapsed Time: {time.time() - startTime:.4f} seconds\n")
+        
+        startTime = time.time()        
         manualResult = revisedSimplex(lp)
+        printManualResult(manualResult)
+        print(f"Elapsed Time: {time.time() - startTime:.4f} seconds\n")
 
-        printSolverResult(solverResult, number_of_nodes, number_of_nodes)
-        printManualResult(manualResult, number_of_nodes, number_of_nodes)
-
-
-def printSolverResult(result, supply_nodes, demand_nodes):
+def printSolverResult(result):
     print("Solver Result:")
     obj_val = result["objective_value"]
-    decision_vars = result["decision_vars"]
     
     print("Optimal Objective Value:", obj_val)
-    for i in range(supply_nodes):
-        for j in range(demand_nodes):
-            print(f"x{i + 1}{j + 1} = {decision_vars[(i, j)]}", end="\t")
-        print()
-    print()
 
 
-def printManualResult(result, supply_nodes, demand_nodes):
+def printManualResult(result):
     print("Manual Result:")
     obj_val = result.objective_val
-    var_vals = result.variable_vals
     
     print("Optimal Objective Value:", obj_val)
-    for i in range(supply_nodes):
-        for j in range(demand_nodes):
-            print(f"x{i + 1}{j + 1} = {var_vals[f'x{i + 1}{j + 1}']}", end="\t")
-        print()
-    print()
+    
 
 experiment()
